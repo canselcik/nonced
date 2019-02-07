@@ -70,7 +70,10 @@ func TestNewAPI(t *testing.T) {
 	info := vuln.DeriveEcdsaInfo(btcd)
 	assert.NotNil(t, info, "derive failed")
 
+	// Result Count
 	assert.Equal(t, 2, len(info), "wrong number of inputs")
+
+	// R
 	assert.Equal(t, "d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1",
 		hex.EncodeToString(info[0].R.Bytes()),
 		"derive r failed on input 0")
@@ -78,6 +81,7 @@ func TestNewAPI(t *testing.T) {
 		hex.EncodeToString(info[1].R.Bytes()),
 		"derive r failed on input 1")
 
+	// S
 	assert.Equal(t, "44e1ff2dfd8102cf7a47c21d5c9fd5701610d04953c6836596b4fe9dd2f53e3e",
 		hex.EncodeToString(info[0].S.Bytes()),
 		"derive r failed on input 0")
@@ -85,6 +89,15 @@ func TestNewAPI(t *testing.T) {
 		hex.EncodeToString(info[1].S.Bytes()),
 		"derive r failed on input 1")
 
+	// Z
+	assert.Equal(t, "c0e2d0a89a348de88fda08211c70d1d7e52ccef2eb9459911bf977d587784c6e",
+		hex.EncodeToString(info[0].Z),
+		"derive z failed on input 0")
+	assert.Equal(t, "17b0f41c8c337ac1e18c98759e83a8cccbc368dd9d89e5f03cb633c265fd0ddc",
+		hex.EncodeToString(info[1].Z),
+		"derive z failed on input 1")
+
+	// PubKey
 	assert.Equal(t, "04dbd0c61532279cf72981c358"+
 		"4fc32216e0127699635c2789f549e0730c059b81ae13301"+
 		"6a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a8"+
