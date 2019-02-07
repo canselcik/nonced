@@ -2,10 +2,16 @@ package internal
 
 import (
 	"encoding/hex"
+	"log"
+
 	"github.com/canselcik/nonced/internal/decoder"
 	"github.com/canselcik/nonced/internal/provider"
-	"github.com/stretchr/testify/assert"
+	"github.com/piotrnar/gocoin/lib/secp256k1"
+
+	"math/big"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 //236   │     def recover_nonce_reuse(self, other):
@@ -30,6 +36,52 @@ import (
 //255   │                 self.x = d
 //256   │                 return self
 //257   │         assert False # could not recover private key
+
+// private key = (z1*s2 - z2*s1)/(r*(s1-s2))
+func RecoverNonceReuse(a, b *decoder.SigHashPair) bool {
+	if a == nil || b == nil || a == b {
+		return false
+	}
+
+	r1 := new(big.Int)
+	r1.SetBytes(a.R.Bytes())
+
+	r2 := new(big.Int)
+	r2.SetBytes(b.R.Bytes())
+
+	if r1.Cmp(r2) != 0 {
+		return false
+	}
+
+	z1 := new(secp256k1.Number)
+	z2 := new(secp256k1.Number)
+	z1.SetBytes(a.Z)
+	z2.SetBytes(b.Z)
+
+	ul := new(secp256k1.Number)
+	ul.Mul(&z1.Int, &b.S.Int)
+
+	ur := new(secp256k1.Number)
+	ur.Mul(&z2.Int, &a.S.Int)
+
+	top := new(secp256k1.Number)
+	top.Sub(&ul.Int, &ur.Int)
+
+	br := new(secp256k1.Number)
+	br.Sub(&a.S.Int, &b.S.Int)
+
+	bot := new(secp256k1.Number)
+	bot.Mul(&a.R.Int, &br.Int)
+
+	priv := new(secp256k1.Number)
+	priv.Div(&top.Int, &bot.Int)
+
+	//secp256k1.RecoverPublicKey()
+	//candidates := a.S.Sub(b.S.)
+	//euler.BigInverseMod()
+	log.Println("PRIV?:", priv.Bytes())
+	return true
+}
 
 var _vulnTxnId = "9ec4bc49e828d924af1d1029cacf709431abbde46d59554b62bc270e3b29c4b1"
 var _vulnTxn, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07" +
@@ -68,44 +120,30 @@ func TestNewAPI(t *testing.T) {
 	btcd := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
 	vuln := decoder.DecodeBitcoinTransaction(_vulnTxn)
 	info := vuln.DeriveEcdsaInfo(btcd)
-	assert.NotNil(t, info, "derive failed")
 
 	// Result Count
 	assert.Equal(t, 2, len(info), "wrong number of inputs")
 
-	// R
-	assert.Equal(t, "d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1",
-		hex.EncodeToString(info[0].R.Bytes()),
-		"derive r failed on input 0")
-	assert.Equal(t, "d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1",
-		hex.EncodeToString(info[1].R.Bytes()),
-		"derive r failed on input 1")
+	r := "d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1"
+	pubkey := "04dbd0c61532279cf72981c3584fc32216e0127699635c2789f549e0730c059b81ae13301" +
+		"6a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a829b449c5ff"
+	for i, entry := range info {
+		assert.Equal(t, pubkey, hex.EncodeToString(entry.PublicKey), "failed to extract public key")
+		assert.Equal(t, r, hex.EncodeToString(entry.R.Bytes()), "failed to extract r")
 
-	// S
-	assert.Equal(t, "44e1ff2dfd8102cf7a47c21d5c9fd5701610d04953c6836596b4fe9dd2f53e3e",
-		hex.EncodeToString(info[0].S.Bytes()),
-		"derive r failed on input 0")
-	assert.Equal(t, "9a5f1c75e461d7ceb1cf3cab9013eb2dc85b6d0da8c3c6e27e3a5a5b3faa5bab",
-		hex.EncodeToString(info[1].S.Bytes()),
-		"derive r failed on input 1")
+		switch i {
+		case 0:
+			assert.Equal(t, "44e1ff2dfd8102cf7a47c21d5c9fd5701610d04953c6836596b4fe9dd2f53e3e",
+				hex.EncodeToString(entry.S.Bytes()), "failed to extract r on input 0")
+			assert.Equal(t, "c0e2d0a89a348de88fda08211c70d1d7e52ccef2eb9459911bf977d587784c6e",
+				hex.EncodeToString(entry.Z), "failed to extract z on input 0")
+		case 1:
+			assert.Equal(t, "9a5f1c75e461d7ceb1cf3cab9013eb2dc85b6d0da8c3c6e27e3a5a5b3faa5bab",
+				hex.EncodeToString(entry.S.Bytes()), "failed to extract r on input 1")
+			assert.Equal(t, "17b0f41c8c337ac1e18c98759e83a8cccbc368dd9d89e5f03cb633c265fd0ddc",
+				hex.EncodeToString(entry.Z), "failed to extract z on input 1")
+		}
+	}
 
-	// Z
-	assert.Equal(t, "c0e2d0a89a348de88fda08211c70d1d7e52ccef2eb9459911bf977d587784c6e",
-		hex.EncodeToString(info[0].Z),
-		"derive z failed on input 0")
-	assert.Equal(t, "17b0f41c8c337ac1e18c98759e83a8cccbc368dd9d89e5f03cb633c265fd0ddc",
-		hex.EncodeToString(info[1].Z),
-		"derive z failed on input 1")
-
-	// PubKey
-	assert.Equal(t, "04dbd0c61532279cf72981c358"+
-		"4fc32216e0127699635c2789f549e0730c059b81ae13301"+
-		"6a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a8"+
-		"29b449c5ff", hex.EncodeToString(info[0].PublicKey),
-		"derive pubkey failed on input 0")
-	assert.Equal(t, "04dbd0c61532279cf72981c358"+
-		"4fc32216e0127699635c2789f549e0730c059b81ae13301"+
-		"6a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a8"+
-		"29b449c5ff", hex.EncodeToString(info[0].PublicKey),
-		"derive pubkey failed on input 1")
+	RecoverNonceReuse(info[0], info[1])
 }
