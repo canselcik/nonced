@@ -39,7 +39,6 @@ func (p *BtcdProvider) GetBlockCount() *int64 {
 	return &bc
 }
 
-
 func (p *BtcdProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 	bc, err := p.Client.GetRawTransaction(txid)
 	if err != nil {

@@ -24,7 +24,7 @@ func DecodeBitcoinTransaction(rawTxn []byte) DecodedTransaction {
 		return nil
 	}
 	return &DecodedBitcoinTransaction{
-		gobtcTx: gtx,
+		gobtcTx:   gtx,
 		btcutilTx: btx,
 	}
 }
@@ -46,8 +46,8 @@ func (tx *DecodedBitcoinTransaction) DeriveEcdsaInfo(infoProvider provider.DataP
 
 		res := SigHashPair{
 			PublicKey: key.Bytes(false),
-			R: sig.R,
-			S: sig.S,
+			R:         sig.R,
+			S:         sig.S,
 		}
 		if infoProvider != nil {
 			prevOutpoint := msgTx.TxIn[i].PreviousOutPoint

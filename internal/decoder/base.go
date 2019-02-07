@@ -6,10 +6,10 @@ import (
 )
 
 type SigHashPair struct {
+	R         secp256k1.Number
+	S         secp256k1.Number
+	Z         []byte
 	PublicKey []byte
-	Z []byte
-	R secp256k1.Number
-	S secp256k1.Number
 }
 
 type DecodedTransaction interface {
