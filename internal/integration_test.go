@@ -2,13 +2,10 @@ package internal
 
 import (
 	"encoding/hex"
-	"log"
-
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/canselcik/nonced/internal/decoder"
 	"github.com/canselcik/nonced/internal/provider"
-	"github.com/piotrnar/gocoin/lib/secp256k1"
-
-	"math/big"
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,44 +39,29 @@ func RecoverNonceReuse(a, b *decoder.SigHashPair) bool {
 	if a == nil || b == nil || a == b {
 		return false
 	}
-
-	r1 := new(big.Int)
-	r1.SetBytes(a.R.Bytes())
-
-	r2 := new(big.Int)
-	r2.SetBytes(b.R.Bytes())
-
-	if r1.Cmp(r2) != 0 {
+	aPk, err := btcec.ParsePubKey(a.PublicKey, btcec.S256())
+	if err != nil {
+		log.Println("Error parsing first pubkey:", err.Error())
+		return false
+	}
+	bPk, err := btcec.ParsePubKey(b.PublicKey, btcec.S256())
+	if err != nil {
+		log.Println("Error parsing second pubkey:", err.Error())
 		return false
 	}
 
-	z1 := new(secp256k1.Number)
-	z2 := new(secp256k1.Number)
-	z1.SetBytes(a.Z)
-	z2.SetBytes(b.Z)
+	if !aPk.IsEqual(bPk) {
+		log.Println("SigHashPair w/ different public keys are not candidates for RecoverNonceReuse")
+		return false
+	}
 
-	ul := new(secp256k1.Number)
-	ul.Mul(&z1.Int, &b.S.Int)
+	// TODO: Port our impl to go from python (see reuse.py)
+	//./reuse.py 04dbd0c61532279cf72981c3584fc32216e0127699635c2789f549e0730c059b81ae133016a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a829b449c5ff d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1 \
+	//c0e2d0a89a348de88fda08211c70d1d7e52ccef2eb9459911bf977d587784c6e 44e1ff2dfd8102cf7a47c21d5c9fd5701610d04953c6836596b4fe9dd2f53e3e \
+	//17b0f41c8c337ac1e18c98759e83a8cccbc368dd9d89e5f03cb633c265fd0ddc 9a5f1c75e461d7ceb1cf3cab9013eb2dc85b6d0da8c3c6e27e3a5a5b3faa5bab
+	//privkey:
+	//88865298299719117682218467295833367085649033095698151055007620974294165995414
 
-	ur := new(secp256k1.Number)
-	ur.Mul(&z2.Int, &a.S.Int)
-
-	top := new(secp256k1.Number)
-	top.Sub(&ul.Int, &ur.Int)
-
-	br := new(secp256k1.Number)
-	br.Sub(&a.S.Int, &b.S.Int)
-
-	bot := new(secp256k1.Number)
-	bot.Mul(&a.R.Int, &br.Int)
-
-	priv := new(secp256k1.Number)
-	priv.Div(&top.Int, &bot.Int)
-
-	//secp256k1.RecoverPublicKey()
-	//candidates := a.S.Sub(b.S.)
-	//euler.BigInverseMod()
-	log.Println("PRIV?:", priv.Bytes())
 	return true
 }
 
