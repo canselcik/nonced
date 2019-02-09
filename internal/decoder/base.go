@@ -117,8 +117,6 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 	candidates[1].Add(&lhs.S.Int, &rhs.S.Int)
 	candidates[2].Sub(&negs1.Int, &rhs.S.Int)
 	candidates[3].Add(&negs1.Int, &rhs.S.Int)
-
-	privKeys := make([]*btcec.PrivateKey, 0)
 	for _, candidate := range candidates {
 		// denominator = inverse_mod(r1 * (candidate % publicKeyOrderInteger), publicKeyOrderInteger)
 		candModOrder.Mod(&candidate.Int, pubKeyOrderInteger)
@@ -131,9 +129,15 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 
 		// Parsing the private key from bytes
 		derivedPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), privateKey.Bytes())
-		privKeys = append(privKeys, derivedPriv)
 
-		// TODO: Verify and select
+		// Validating the candidate
+		signedHash, err := derivedPriv.Sign(lhs.Z)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign with a derived private key: %s", err.Error())
+		}
+		if signedHash.Verify(lhs.Z, lhsPk) {
+			return derivedPriv, nil
+		}
 	}
-	return privKeys[0], nil
+	return nil, errors.New("unable to derive a private key from the inputs despite everything looking okay")
 }
