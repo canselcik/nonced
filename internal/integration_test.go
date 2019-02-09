@@ -2,15 +2,26 @@ package internal
 
 import (
 	"encoding/hex"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/decoder"
-	"github.com/canselcik/nonced/internal/provider"
+	"github.com/stretchr/testify/mock"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-var _vulnTxnId = "9ec4bc49e828d924af1d1029cacf709431abbde46d59554b62bc270e3b29c4b1"
-var _vulnTxn, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07" +
+type MockedDataSource struct{
+	mock.Mock
+}
+
+func (m *MockedDataSource) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
+	retArgs := m.Called(txid)
+	cast, _ := retArgs.Get(0).(*btcutil.Tx)
+	return cast
+}
+
+var tx9ec4b, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07" +
 	"cc0192b7238bc9c3dacbae555baf701010000008a4730440220d47ce4c025c35ec440bc81d998" +
 	"34a624875161a26bf56ef7fdc0f5d52f843ad1022044e1ff2dfd8102cf7a47c21d5c9fd570161" +
 	"0d04953c6836596b4fe9dd2f53e3e014104dbd0c61532279cf72981c3584fc32216e012769963" +
@@ -22,8 +33,8 @@ var _vulnTxn, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07"
 	"016a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a829b449c5ffffffffff01a0860100" +
 	"000000001976a91470792fb74a5df745bac07df6fe020f871cbb293b88ac00000000")
 
-var _prevTxnIdA = "01f7ba55e5baac3d9cbc38722b19c07cb0cd2d2b25f4c270af4d9f2f3e604cf6"
-var _prevTxnA, _ = hex.DecodeString("0100000001c4c86ae540d340471b03833cb67386b06" +
+var id01f7ba, _ = chainhash.NewHashFromStr("01f7ba55e5baac3d9cbc38722b19c07cb0cd2d2b25f4c270af4d9f2f3e604cf6")
+var tx01f7ba, _ = hex.DecodeString("0100000001c4c86ae540d340471b03833cb67386b06" +
 	"0a7a5632f1ee730c71ef6909e90eb9c000000008b4830450221008787140a00fdb05e55ef660f5" +
 	"4c3f51d849935d14bc2e2c60fb97a051a1da3c70220797b5eb265246e63cb061ab277c541a3ba4" +
 	"237d5b3c5fe94b6af9400723a879001410404c6d628a12e1cbf01b1d8316cb1c09a38163369f11" +
@@ -32,8 +43,8 @@ var _prevTxnA, _ = hex.DecodeString("0100000001c4c86ae540d340471b03833cb67386b06
 	"33c88acd0fb0100000000001976a91470792fb74a5df745bac07df6fe020f871cbb293b88ac000" +
 	"00000")
 
-var _prevTxnIdB = "4a85d9c86ba415f489be1ec68f67e862e9c3d8d13c892a3afacaa02bdb41f829"
-var _prevTxnB, _ = hex.DecodeString("0100000001c4c86ae540d340471b03833cb67386b06" +
+var id4a85d9, _ = chainhash.NewHashFromStr("4a85d9c86ba415f489be1ec68f67e862e9c3d8d13c892a3afacaa02bdb41f829")
+var tx4a85d9, _ = hex.DecodeString("0100000001c4c86ae540d340471b03833cb67386b06" +
 	"0a7a5632f1ee730c71ef6909e90eb9c010000008a4730440220d47ce4c025c35ec440bc81d9983" +
 	"4a624875161a26bf56ef7fdc0f5d52f843ad1022012a8c1d5c602e382c178fbfcb957e8ecc347f" +
 	"1baf78a206f20a97ff4c433e146014104dbd0c61532279cf72981c3584fc32216e0127699635c2" +
@@ -43,9 +54,16 @@ var _prevTxnB, _ = hex.DecodeString("0100000001c4c86ae540d340471b03833cb67386b06
 	"000")
 
 func TestNewAPI(t *testing.T) {
-	btcd := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
-	vuln := decoder.DecodeBitcoinTransaction(_vulnTxn)
-	info := vuln.DeriveEcdsaInfo(btcd)
+	ds := new(MockedDataSource)
+	parsed01f7ba, _ := btcutil.NewTxFromBytes(tx01f7ba)
+	parsed4a85d9, _ := btcutil.NewTxFromBytes(tx4a85d9)
+
+	ds.On("GetTransaction", id01f7ba).Return(parsed01f7ba)
+	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9)
+
+	//btcd := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
+	vuln := decoder.DecodeBitcoinTransaction(tx9ec4b)
+	info := vuln.DeriveEcdsaInfo(ds)
 
 	// Result Count
 	assert.Equal(t, 2, len(info), "wrong number of inputs")
@@ -78,4 +96,6 @@ func TestNewAPI(t *testing.T) {
 	assert.NotNil(t, privKey, "derived privateKey is nil despite no errors")
 	assert.Equal(t, "c477f9f65c22cce20657faa5b2d1d8122336f851a508a1ed04e479c34985bf96",
 		hex.EncodeToString(privKey.Serialize()), "derived incorrect privateKey")
+
+	ds.AssertExpectations(t)
 }
