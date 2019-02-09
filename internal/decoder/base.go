@@ -2,14 +2,11 @@ package decoder
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/piotrnar/gocoin/lib/secp256k1"
-	"os/exec"
-	"strings"
 )
 
 type SigHashPair struct {
@@ -57,26 +54,89 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 		return nil, errors.New("sigHashPair w/ different public keys are not candidates for RecoverPrivateKey")
 	}
 
-	output, err := exec.Command("./reuse.py",
-		hex.EncodeToString(lhs.PublicKey),
-		hex.EncodeToString(lhs.R.Bytes()),
-		hex.EncodeToString(lhs.Z),
-		hex.EncodeToString(lhs.S.Bytes()),
-		hex.EncodeToString(rhs.Z),
-		hex.EncodeToString(rhs.S.Bytes()),
-	).Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed derivation: %s", err.Error())
-	}
-	a := strings.TrimSpace(string(output))
-	decoded, err := hex.DecodeString(a)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode output: %s", err.Error())
-	}
+	// pk = Private Key (unknown at first)
+	// K  = K value that was used (unknown at first)
+	// N  = integer order of G (part of public key, known)
 
-	derivedPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), decoded)
-	if derivedPriv == nil {
-		return nil, errors.New("failed to unmarshal the derived private key into an ecdsa.PrivateKey")
+	// From Signing Definition:
+	// s1 = (L1 + pk * R) / K Mod N    and     s2 = (L2 + pk * R) / K Mod N
+
+	// Rearrange:
+	// K = (L1 + pk * R) / s1 Mod N    and     K = (L2 + pk * R) / s2 Mod N
+
+	// Set Equal:
+	// (L1 + pk * R) / s1 = (L2 + pk * R) / s2     Mod N
+
+	// Solve for pk (private key):
+	// pk Mod N = (s2 * L1 - s1 * L2) / R * (s1 - s2)
+	// pk Mod N = (s2 * L1 - s1 * L2) * (R * (s1 - s2)) ** -1
+
+	pubKeyOrderInteger := lhsPk.Curve.Params().N
+
+	l1 := new(secp256k1.Number)
+	l1.SetBytes(lhs.Z)
+
+	s2l1 := new(secp256k1.Number)
+	s2l1.Mul(&rhs.S.Int, &l1.Int)
+
+	// (((s2 * L1) % publicKeyOrderInteger)
+	firstTerm := new(secp256k1.Number)
+	firstTerm.Mod(&s2l1.Int, pubKeyOrderInteger)
+
+	l2 := new(secp256k1.Number)
+	l2.SetBytes(rhs.Z)
+
+	s1l2 := new(secp256k1.Number)
+	s1l2.Mul(&lhs.S.Int, &l2.Int)
+
+	// ((s1 * L2) % publicKeyOrderInteger))
+	secondTerm := new(secp256k1.Number)
+	secondTerm.Mod(&s1l2.Int, pubKeyOrderInteger)
+
+	// numerator = (((s2 * L1) % publicKeyOrderInteger) - ((s1 * L2) % publicKeyOrderInteger))
+	numerator := new(secp256k1.Number)
+	numerator.Sub(&firstTerm.Int, &secondTerm.Int)
+
+	// Set up all candidates due to the symmetry on the curve
+	negs1 := new(secp256k1.Number)
+	negs1.Neg(&lhs.S.Int)
+	negs2 := new(secp256k1.Number)
+	negs2.Neg(&rhs.S.Int)
+
+	candidates := []*secp256k1.Number {
+		new(secp256k1.Number), // (s1 - s2)
+		new(secp256k1.Number), // (s1 + s2)
+		new(secp256k1.Number), // (-s1 - s2)
+		new(secp256k1.Number), // (-s1 + s2)
 	}
-	return derivedPriv, nil
+	candidates[0].Sub(&lhs.S.Int, &rhs.S.Int)
+	candidates[1].Add(&lhs.S.Int, &rhs.S.Int)
+	candidates[2].Sub(&negs1.Int, &rhs.S.Int)
+	candidates[3].Add(&negs1.Int, &rhs.S.Int)
+
+	privKeys := make([]*btcec.PrivateKey, 0)
+	for _, candidate := range candidates {
+		candModOrder := new(secp256k1.Number)
+		candModOrder.Mod(&candidate.Int, pubKeyOrderInteger)
+
+		invModTarget := new(secp256k1.Number)
+		invModTarget.Mul(&lhs.R.Int, &candModOrder.Int)
+
+		//	denominator = inverse_mod(r1 * (candidate % publicKeyOrderInteger), publicKeyOrderInteger)
+		denominator := new(secp256k1.Number)
+		denominator.ModInverse(&invModTarget.Int, pubKeyOrderInteger)
+
+		mult := new(secp256k1.Number)
+		mult.Mul(&numerator.Int, &denominator.Int)
+
+		//	private_key = numerator * denominator % publicKeyOrderInteger
+		privateKey := new(secp256k1.Number)
+		privateKey.Mod(&mult.Int, pubKeyOrderInteger)
+
+		derivedPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), privateKey.Bytes())
+		privKeys = append(privKeys, derivedPriv)
+
+		// TODO: Verify and select
+	}
+	return privKeys[0], nil
 }
