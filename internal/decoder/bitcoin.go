@@ -58,6 +58,7 @@ func (tx *DecodedBitcoinTransaction) DeriveEcdsaInfo(infoProvider provider.DataP
 				continue
 			}
 
+			// TODO: Perhaps it may be not SigHashAll at all times?
 			z, err := txscript.CalcSignatureHash(
 				prevTx.MsgTx().TxOut[prevOutpoint.Index].PkScript,
 				txscript.SigHashAll,

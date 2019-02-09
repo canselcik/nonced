@@ -51,6 +51,12 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 		return nil, errors.New("need two distinct SigHashPair for RecoverPrivateKey")
 	}
 
+	// Make sure both SigHashPair have Z values from the DeriveEcdsaInfo step
+	if lhs.Z == nil || rhs.Z == nil {
+		return nil, errors.New("missing Z value in SigHashPair for RecoverPrivateKey, " +
+			"make sure to provide a DataProvider to DeriveEcdsaInfo")
+	}
+
 	// Check for nonce reuse
 	if bytes.Equal(lhs.R.Bytes(), rhs.R.Bytes()) {
 		return nil, errors.New("no R value reuse detected in given SigHashPair for RecoverPrivateKey")
