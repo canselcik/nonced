@@ -6,6 +6,8 @@ from ecdsa import SigningKey, NIST224p, VerifyingKey
 from ecdsa.util import sigencode_string, sigdecode_string
 from ecdsa.numbertheory import inverse_mod
 from hashlib import sha1
+import sys
+import binascii
 
 def reuse(publicKeyOrderInteger, signaturePair1, signaturePair2, messageHash1, messageHash2):
     # R  = r1 == r2
@@ -38,10 +40,13 @@ def reuse(publicKeyOrderInteger, signaturePair1, signaturePair2, messageHash1, m
     # pk Mod N = (s2 * L1 - s1 * L2) / R * (s1 - s2)
     # pk Mod N = (s2 * L1 - s1 * L2) * (R * (s1 - s2)) ** -1
     numerator = (((s2 * L1) % publicKeyOrderInteger) - ((s1 * L2) % publicKeyOrderInteger))
-    denominator = inverse_mod(r1 * ((s1 - s2) % publicKeyOrderInteger), publicKeyOrderInteger)
 
-    privateKey = numerator * denominator % publicKeyOrderInteger
-    return privateKey
+    for candidate in [(s1 - s2), (s1 + s2), (-s1 - s2), (-s1 + s2)]:
+        denominator = inverse_mod(r1 * (candidate % publicKeyOrderInteger), publicKeyOrderInteger)
+        private_key = numerator * denominator % publicKeyOrderInteger
+        # TODO: for now, otherwise in the go port of this, we will look for all 4 and verify
+        return private_key.to_bytes(32, byteorder='big').hex()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Do the thing')

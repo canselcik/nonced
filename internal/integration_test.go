@@ -2,8 +2,6 @@ package internal
 
 import (
 	"encoding/hex"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/decoder"
 	"github.com/canselcik/nonced/internal/provider"
 	"testing"
@@ -77,10 +75,7 @@ func TestNewAPI(t *testing.T) {
 
 	privKey, err := info[0].RecoverPrivateKey(info[1])
 	assert.NoError(t, err, "failed to derive privateKey in a nonce-reuse scenario")
-	assert.NotNil(t, err, "derived privateKey is nil despite no errors")
-
-	asWif, err := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, true)
-	assert.NotNil(t, err, "derived privateKey couldn't be encoded as WIF")
-	assert.Equal(t, "5KJp7KEffR7HHFWSFYjiCUAntRSTY69LAQEX1AUzaSBHHFdKEpQ",
-		asWif.String(),"derived wrong private key")
+	assert.NotNil(t, privKey, "derived privateKey is nil despite no errors")
+	assert.Equal(t, "c477f9f65c22cce20657faa5b2d1d8122336f851a508a1ed04e479c34985bf96",
+		hex.EncodeToString(privKey.Serialize()), "derived incorrect privateKey")
 }
