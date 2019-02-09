@@ -73,35 +73,15 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 
 	pubKeyOrderInteger := lhsPk.Curve.Params().N
 
-	l1 := new(secp256k1.Number)
-	l1.SetBytes(lhs.Z)
-
-	s2l1 := new(secp256k1.Number)
-	s2l1.Mul(&rhs.S.Int, &l1.Int)
-
-	// (((s2 * L1) % publicKeyOrderInteger)
-	firstTerm := new(secp256k1.Number)
-	firstTerm.Mod(&s2l1.Int, pubKeyOrderInteger)
-
-	l2 := new(secp256k1.Number)
-	l2.SetBytes(rhs.Z)
-
-	s1l2 := new(secp256k1.Number)
-	s1l2.Mul(&lhs.S.Int, &l2.Int)
-
-	// ((s1 * L2) % publicKeyOrderInteger))
-	secondTerm := new(secp256k1.Number)
-	secondTerm.Mod(&s1l2.Int, pubKeyOrderInteger)
-
-	// numerator = (((s2 * L1) % publicKeyOrderInteger) - ((s1 * L2) % publicKeyOrderInteger))
-	numerator := new(secp256k1.Number)
-	numerator.Sub(&firstTerm.Int, &secondTerm.Int)
-
-	// Set up all candidates due to the symmetry on the curve
-	negs1 := new(secp256k1.Number)
-	negs1.Neg(&lhs.S.Int)
-	negs2 := new(secp256k1.Number)
-	negs2.Neg(&rhs.S.Int)
+	l1, l2, s1l2, s2l1, firstTerm, secondTerm,
+	numerator, negs1, negs2, candModOrder, invModTarget, denominator, mult, privateKey :=
+		new(secp256k1.Number), new(secp256k1.Number),
+		new(secp256k1.Number), new(secp256k1.Number),
+		new(secp256k1.Number), new(secp256k1.Number),
+		new(secp256k1.Number), new(secp256k1.Number),
+		new(secp256k1.Number), new(secp256k1.Number),
+		new(secp256k1.Number), new(secp256k1.Number),
+		new(secp256k1.Number), new(secp256k1.Number)
 
 	candidates := []*secp256k1.Number {
 		new(secp256k1.Number), // (s1 - s2)
@@ -109,6 +89,30 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 		new(secp256k1.Number), // (-s1 - s2)
 		new(secp256k1.Number), // (-s1 + s2)
 	}
+
+	// Load the hash values from both SigHashPair
+	l1.SetBytes(lhs.Z)
+	l2.SetBytes(rhs.Z)
+
+	// (s2 * L1)
+	s2l1.Mul(&rhs.S.Int, &l1.Int)
+
+	// (s2 * L1) % publicKeyOrderInteger
+	firstTerm.Mod(&s2l1.Int, pubKeyOrderInteger)
+
+	// (s1 * L2)
+	s1l2.Mul(&lhs.S.Int, &l2.Int)
+
+	// (s1 * L2) % publicKeyOrderInteger
+	secondTerm.Mod(&s1l2.Int, pubKeyOrderInteger)
+
+	// numerator = (((s2 * L1) % publicKeyOrderInteger) - ((s1 * L2) % publicKeyOrderInteger))
+	numerator.Sub(&firstTerm.Int, &secondTerm.Int)
+
+	// Set up all candidates due to the symmetry on the curve
+	negs1.Neg(&lhs.S.Int)
+	negs2.Neg(&rhs.S.Int)
+
 	candidates[0].Sub(&lhs.S.Int, &rhs.S.Int)
 	candidates[1].Add(&lhs.S.Int, &rhs.S.Int)
 	candidates[2].Sub(&negs1.Int, &rhs.S.Int)
@@ -116,23 +120,16 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 
 	privKeys := make([]*btcec.PrivateKey, 0)
 	for _, candidate := range candidates {
-		candModOrder := new(secp256k1.Number)
+		// denominator = inverse_mod(r1 * (candidate % publicKeyOrderInteger), publicKeyOrderInteger)
 		candModOrder.Mod(&candidate.Int, pubKeyOrderInteger)
-
-		invModTarget := new(secp256k1.Number)
 		invModTarget.Mul(&lhs.R.Int, &candModOrder.Int)
-
-		//	denominator = inverse_mod(r1 * (candidate % publicKeyOrderInteger), publicKeyOrderInteger)
-		denominator := new(secp256k1.Number)
 		denominator.ModInverse(&invModTarget.Int, pubKeyOrderInteger)
 
-		mult := new(secp256k1.Number)
+		// private_key = numerator * denominator % publicKeyOrderInteger
 		mult.Mul(&numerator.Int, &denominator.Int)
-
-		//	private_key = numerator * denominator % publicKeyOrderInteger
-		privateKey := new(secp256k1.Number)
 		privateKey.Mod(&mult.Int, pubKeyOrderInteger)
 
+		// Parsing the private key from bytes
 		derivedPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), privateKey.Bytes())
 		privKeys = append(privKeys, derivedPriv)
 
