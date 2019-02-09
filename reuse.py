@@ -20,7 +20,7 @@ def reuse(publicKeyOrderInteger, signaturePair1, signaturePair2, messageHash1, m
     L1 = int.from_bytes(messageHash1, byteorder='big')
     L2 = int.from_bytes(messageHash2, byteorder='big')
 
-    if (r1 != r2):
+    if r1 != r2:
         print("ERROR: The signature pairs given are not susceptible to this attack")
         return None
 
