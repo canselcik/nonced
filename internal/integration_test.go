@@ -5,6 +5,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/decoder"
+	"github.com/canselcik/nonced/internal/provider"
 	"github.com/stretchr/testify/mock"
 	"testing"
 
@@ -61,7 +62,7 @@ func TestNewAPI(t *testing.T) {
 	ds.On("GetTransaction", id01f7ba).Return(parsed01f7ba)
 	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9)
 
-	//btcd := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
+	//ds := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
 	vuln := decoder.DecodeBitcoinTransaction(tx9ec4b)
 	info := vuln.DeriveEcdsaInfo(ds)
 
@@ -98,4 +99,14 @@ func TestNewAPI(t *testing.T) {
 		hex.EncodeToString(privKey.Serialize()), "derived incorrect privateKey")
 
 	ds.AssertExpectations(t)
+}
+
+func TestDataProviders(t *testing.T) {
+	is := provider.NewInsightProvider()
+	bs := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
+
+	hsh, _ := chainhash.NewHashFromStr("9ec4bc49e828d924af1d1029cacf709431abbde46d59554b62bc270e3b29c4b1")
+	bst := bs.GetTransaction(hsh)
+	ist := is.GetTransaction(hsh)
+	assert.Equal(t, bst, ist, "insight and btcd in disagrement")
 }
