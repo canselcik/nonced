@@ -22,6 +22,13 @@ func (m *MockedDataSource) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 	return cast
 }
 
+func (m *MockedDataSource) GetRawTransactionFromTxId(txidStr string) ([]byte, error) {
+	retArgs := m.Called(txidStr)
+	cast, _ := retArgs.Get(0).([]byte)
+	return cast, retArgs.Error(1)
+}
+
+
 var tx9ec4b, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07" +
 	"cc0192b7238bc9c3dacbae555baf701010000008a4730440220d47ce4c025c35ec440bc81d998" +
 	"34a624875161a26bf56ef7fdc0f5d52f843ad1022044e1ff2dfd8102cf7a47c21d5c9fd570161" +
@@ -98,6 +105,21 @@ func TestNewAPI(t *testing.T) {
 		hex.EncodeToString(solutionSet[0].Serialize()), "derived incorrect privateKey")
 
 	ds.AssertExpectations(t)
+}
+
+func TestNotBreakable(t *testing.T) {
+	ds := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
+	solveBucket := sighash.NewSHPairBucket(ds)
+
+	tx, err := ds.GetRawTransactionFromTxId("9124ea4043247e6fd27712d92685cdad6ea29f654ae383424ca3af14efe50b21")
+	assert.NoError(t, err, "failed to get txn by id")
+
+	extractedCount := solveBucket.Add(tx)
+	assert.Equal(t, 3, extractedCount, "wrong number of SHPair extractions")
+
+	solutions := solveBucket.Solve()
+	assert.Equal(t, 0, len(solutions), "wrong number of SHPair solutions")
+
 }
 
 func TestDataProviders(t *testing.T) {

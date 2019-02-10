@@ -87,7 +87,9 @@ func (bucket *SHPairBucket) Solve() []*btcec.PrivateKey {
 		for _, rhs := range bucket.Pairs[i+1:] {
 			rec, err := lhs.RecoverPrivateKey(rhs)
 			if err != nil {
-				log.Println("Error in Solve():", err.Error())
+				if err != WarnNoRValueReuse && err != WarnPubkeyMismatch {
+					log.Println("Error in Solve():", err.Error())
+				}
 			}
 			if rec != nil {
 				recovered = append(recovered, rec)

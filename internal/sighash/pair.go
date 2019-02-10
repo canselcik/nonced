@@ -16,37 +16,48 @@ type SHPair struct {
 	PublicKey []byte
 }
 
+var (
+	WarnNoRValueReuse  = errors.New("no R value reuse detected in given SHPair for RecoverPrivateKey")
+	WarnPubkeyMismatch = errors.New("sigHashPair w/ different public keys are not candidates for RecoverPrivateKey")
+
+	ErrMissingZValue = errors.New("missing Z value in SHPair for RecoverPrivateKey, " +
+		"make sure to provide a DataProvider to DeriveEcdsaInfo")
+	ErrIdenticalInputs = errors.New("need two distinct SHPair for RecoverPrivateKey")
+	ErrNilInput        = errors.New("both inputs need to be non-nil SHPair")
+	ErrCorruptPubkey   = errors.New("failed to parse given public key")
+	ErrNoResult        = errors.New("unable to derive a private key from the inputs despite everything looking okay")
+)
+
 func (lhs *SHPair) RecoverPrivateKey(rhs *SHPair) (*btcec.PrivateKey, error) {
 	// Make sure we have two distinct SHPair
 	if lhs == nil || rhs == nil {
-		return nil, errors.New("RecoverPrivateKey needs non-nil SHPair")
+		return nil, ErrNilInput
 	}
 	if lhs == rhs {
-		return nil, errors.New("need two distinct SHPair for RecoverPrivateKey")
+		return nil, ErrIdenticalInputs
 	}
 
 	// Make sure both SHPair have Z values from the DeriveEcdsaInfo step
 	if lhs.Z == nil || rhs.Z == nil {
-		return nil, errors.New("missing Z value in SHPair for RecoverPrivateKey, " +
-			"make sure to provide a DataProvider to DeriveEcdsaInfo")
+		return nil, ErrMissingZValue
 	}
 
 	// Check for nonce reuse
 	if !bytes.Equal(lhs.R.Bytes(), rhs.R.Bytes()) {
-		return nil, errors.New("no R value reuse detected in given SHPair for RecoverPrivateKey")
+		return nil, WarnNoRValueReuse
 	}
 
 	// Check both pubkeys are valid and equal each other
 	lhsPk, err := btcec.ParsePubKey(lhs.PublicKey, btcec.S256())
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse lhsPubKey: %s", err.Error())
+		return nil, ErrCorruptPubkey
 	}
 	rhsPk, err := btcec.ParsePubKey(rhs.PublicKey, btcec.S256())
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse rhsPubKey: %s", err.Error())
+		return nil, ErrCorruptPubkey
 	}
 	if !lhsPk.IsEqual(rhsPk) {
-		return nil, errors.New("sigHashPair w/ different public keys are not candidates for RecoverPrivateKey")
+		return nil, WarnPubkeyMismatch
 	}
 
 	// pk = Private Key (unknown at first)
@@ -134,5 +145,5 @@ func (lhs *SHPair) RecoverPrivateKey(rhs *SHPair) (*btcec.PrivateKey, error) {
 			return derivedPriv, nil
 		}
 	}
-	return nil, errors.New("unable to derive a private key from the inputs despite everything looking okay")
+	return nil, ErrNoResult
 }

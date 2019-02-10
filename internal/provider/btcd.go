@@ -1,8 +1,13 @@
 package provider
 
 import (
+	"bufio"
+	"bytes"
+	"errors"
+	"fmt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"log"
 )
@@ -47,4 +52,29 @@ func (p *BtcdProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 		return nil
 	}
 	return bc
+}
+
+func (p *BtcdProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, error) {
+	txid, err := chainhash.NewHashFromStr(txidStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse txidStr: %s", err.Error())
+	}
+
+	tx := p.GetTransaction(txid)
+	if tx == nil {
+		return nil, errors.New("GetTransaction returned nil")
+	}
+
+	var b bytes.Buffer
+	wr := bufio.NewWriter(&b)
+	err = tx.MsgTx().BtcEncode(wr, 0, wire.WitnessEncoding)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode the transaction: %s", err.Error())
+	}
+	err = wr.Flush()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to flush the buffer while encoding the transaction: %s", err.Error())
+	}
+	return b.Bytes(), nil
 }

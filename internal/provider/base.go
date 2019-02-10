@@ -7,4 +7,5 @@ import (
 
 type DataProvider interface {
 	GetTransaction(txid *chainhash.Hash) *btcutil.Tx
+	GetRawTransactionFromTxId(txidStr string) ([]byte, error)
 }
