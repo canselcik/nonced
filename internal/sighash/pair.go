@@ -1,44 +1,39 @@
-package decoder
+package sighash
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/canselcik/nonced/internal/provider"
 	"github.com/piotrnar/gocoin/lib/secp256k1"
 )
 
-type SigHashPair struct {
+type SHPair struct {
 	R         secp256k1.Number
 	S         secp256k1.Number
 	Z         []byte
 	PublicKey []byte
 }
 
-type DecodedTransaction interface {
-	GetTransactionId() string
-	DeriveEcdsaInfo(infoProvider provider.DataProvider) []*SigHashPair
-}
-
-func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, error) {
-	// Make sure we have two distinct SigHashPair
+func (lhs *SHPair) RecoverPrivateKey(rhs *SHPair) (*btcec.PrivateKey, error) {
+	// Make sure we have two distinct SHPair
 	if lhs == nil || rhs == nil {
-		return nil, errors.New("RecoverPrivateKey needs non-nil SigHashPair")
+		return nil, errors.New("RecoverPrivateKey needs non-nil SHPair")
 	}
 	if lhs == rhs {
-		return nil, errors.New("need two distinct SigHashPair for RecoverPrivateKey")
+		return nil, errors.New("need two distinct SHPair for RecoverPrivateKey")
 	}
 
-	// Make sure both SigHashPair have Z values from the DeriveEcdsaInfo step
+	// Make sure both SHPair have Z values from the DeriveEcdsaInfo step
 	if lhs.Z == nil || rhs.Z == nil {
-		return nil, errors.New("missing Z value in SigHashPair for RecoverPrivateKey, " +
+		return nil, errors.New("missing Z value in SHPair for RecoverPrivateKey, " +
 			"make sure to provide a DataProvider to DeriveEcdsaInfo")
 	}
 
 	// Check for nonce reuse
 	if !bytes.Equal(lhs.R.Bytes(), rhs.R.Bytes()) {
-		return nil, errors.New("no R value reuse detected in given SigHashPair for RecoverPrivateKey")
+		return nil, errors.New("no R value reuse detected in given SHPair for RecoverPrivateKey")
 	}
 
 	// Check both pubkeys are valid and equal each other
@@ -74,7 +69,7 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 	pubKeyOrderInteger := lhsPk.Curve.Params().N
 
 	l1, l2, s1l2, s2l1, firstTerm, secondTerm,
-	numerator, negs1, negs2, candModOrder, invModTarget, denominator, mult, privateKey :=
+		numerator, negs1, negs2, candModOrder, invModTarget, denominator, mult, privateKey :=
 		new(secp256k1.Number), new(secp256k1.Number),
 		new(secp256k1.Number), new(secp256k1.Number),
 		new(secp256k1.Number), new(secp256k1.Number),
@@ -83,14 +78,14 @@ func (lhs *SigHashPair) RecoverPrivateKey(rhs *SigHashPair) (*btcec.PrivateKey, 
 		new(secp256k1.Number), new(secp256k1.Number),
 		new(secp256k1.Number), new(secp256k1.Number)
 
-	candidates := []*secp256k1.Number {
+	candidates := []*secp256k1.Number{
 		new(secp256k1.Number), // (s1 - s2)
 		new(secp256k1.Number), // (s1 + s2)
 		new(secp256k1.Number), // (-s1 - s2)
 		new(secp256k1.Number), // (-s1 + s2)
 	}
 
-	// Load the hash values from both SigHashPair
+	// Load the hash values from both SHPair
 	l1.SetBytes(lhs.Z)
 	l2.SetBytes(rhs.Z)
 

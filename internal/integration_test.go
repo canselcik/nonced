@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
-	"github.com/canselcik/nonced/internal/decoder"
+	"github.com/canselcik/nonced/internal/sighash"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/stretchr/testify/mock"
 	"testing"
@@ -63,16 +63,14 @@ func TestNewAPI(t *testing.T) {
 	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9)
 
 	//ds := provider.NewBtcdProvider("localhost:8334", "admin", "admin", true, true)
-	vuln := decoder.DecodeBitcoinTransaction(tx9ec4b)
-	info := vuln.DeriveEcdsaInfo(ds)
-
-	// Result Count
-	assert.Equal(t, 2, len(info), "wrong number of inputs")
+	solveBucket := sighash.NewSHPairBucket(ds)
+	extractedCount := solveBucket.Add(tx9ec4b)
+	assert.Equal(t, 2, extractedCount, "wrong number of SHPair extractions")
 
 	r := "d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1"
 	pubkey := "04dbd0c61532279cf72981c3584fc32216e0127699635c2789f549e0730c059b81ae13301" +
 		"6a69c21e23f1859a95f06d52b7bf149a8f2fe4e8535c8a829b449c5ff"
-	for i, entry := range info {
+	for i, entry := range solveBucket.Pairs {
 		assert.Equal(t, pubkey,
 			hex.EncodeToString(entry.PublicKey), "failed to extract public key")
 		assert.Equal(t, r,
@@ -92,11 +90,12 @@ func TestNewAPI(t *testing.T) {
 		}
 	}
 
-	privKey, err := info[0].RecoverPrivateKey(info[1])
-	assert.NoError(t, err, "failed to derive privateKey in a nonce-reuse scenario")
-	assert.NotNil(t, privKey, "derived privateKey is nil despite no errors")
+	solutionSet := solveBucket.Solve()
+	assert.Equal(t, 1, len(solutionSet),
+		"wrong number of PrivateKey solutions in a nonce reuse scenario")
+	assert.NotNil(t, solutionSet[0], "derived privateKey is nil despite no errors")
 	assert.Equal(t, "c477f9f65c22cce20657faa5b2d1d8122336f851a508a1ed04e479c34985bf96",
-		hex.EncodeToString(privKey.Serialize()), "derived incorrect privateKey")
+		hex.EncodeToString(solutionSet[0].Serialize()), "derived incorrect privateKey")
 
 	ds.AssertExpectations(t)
 }

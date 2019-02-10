@@ -19,6 +19,7 @@ func NewBtcdProvider(host, user, pass string, httpPost, disableTls bool) DataPro
 		HTTPPostMode: httpPost,
 		DisableTLS:   disableTls,
 	}, nil)
+	// TODO: leverage ntfn handlers here for realtime testing
 	if err != nil {
 		log.Println("Failed to create BtcdProvider:", err.Error())
 		return nil
