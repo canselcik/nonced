@@ -11,13 +11,13 @@ import (
 )
 
 type SHPairBucket struct {
-	Pairs 		 []*SHPair
+	Pairs        []*SHPair
 	infoProvider provider.DataProvider
 }
 
 func NewSHPairBucket(infoProvider provider.DataProvider) *SHPairBucket {
 	return &SHPairBucket{
-		Pairs: make([]*SHPair, 0),
+		Pairs:        make([]*SHPair, 0),
 		infoProvider: infoProvider,
 	}
 }
@@ -82,7 +82,7 @@ func (bucket *SHPairBucket) Solve() []*btcec.PrivateKey {
 	}
 
 	recovered := make([]*btcec.PrivateKey, 0)
-	for i := 0; i < len(bucket.Pairs) - 1; i++ {
+	for i := 0; i < len(bucket.Pairs)-1; i++ {
 		lhs := bucket.Pairs[i]
 		for _, rhs := range bucket.Pairs[i+1:] {
 			rec, err := lhs.RecoverPrivateKey(rhs)

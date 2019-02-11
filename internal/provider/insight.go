@@ -2,10 +2,10 @@ package provider
 
 import (
 	"bufio"
-	"errors"
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
@@ -25,7 +25,6 @@ type InsightProvider struct {
 func NewCustomInsightProvider(address string) DataProvider {
 	return &InsightProvider{
 		address: address,
-
 	}
 }
 
@@ -65,7 +64,7 @@ func (p *InsightProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 		return nil
 	}
 
-	var raw struct{
+	var raw struct {
 		RawTx string `json:"rawtx"`
 	}
 	err = json.Unmarshal(body, &raw)
