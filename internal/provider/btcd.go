@@ -16,6 +16,10 @@ type BtcdProvider struct {
 	*rpcclient.Client
 }
 
+func NewLocalBitcoindRpcProvider() DataProvider {
+	return NewBtcdProvider("127.0.0.1:8332", "bitcoin", "password", true, true)
+}
+
 func NewBtcdProvider(host, user, pass string, httpPost, disableTls bool) DataProvider {
 	client, err := rpcclient.New(&rpcclient.ConnConfig{
 		Host:         host,
@@ -33,16 +37,7 @@ func NewBtcdProvider(host, user, pass string, httpPost, disableTls bool) DataPro
 }
 
 func (p *BtcdProvider) Close() {
-	p.Client.Shutdown()
-}
-
-func (p *BtcdProvider) GetBlockCount() *int64 {
-	bc, err := p.Client.GetBlockCount()
-	if err != nil {
-		log.Println("Failed to GetBlockCount in BtcdProvider:", err.Error())
-		return nil
-	}
-	return &bc
+	p.Shutdown()
 }
 
 func (p *BtcdProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {

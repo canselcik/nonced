@@ -68,7 +68,6 @@ func TestNewAPI(t *testing.T) {
 	ds.On("GetTransaction", id01f7ba).Return(parsed01f7ba)
 	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9)
 
-	//ds := provider.NewBtcdProvider("localhost:8332", "admin", "admin", true, true)
 	solveBucket := sighash.NewSHPairBucket(ds)
 	extractedCount := solveBucket.Add(tx9ec4b)
 	assert.Equal(t, 2, extractedCount, "wrong number of SHPair extractions")
@@ -107,11 +106,15 @@ func TestNewAPI(t *testing.T) {
 }
 
 func TestNotBreakable(t *testing.T) {
-	ds := provider.NewBtcdProvider("localhost:8332", "admin", "admin", true, true)
+	ds := provider.NewLocalBitcoindRpcProvider()
 	solveBucket := sighash.NewSHPairBucket(ds)
 
 	tx, err := ds.GetRawTransactionFromTxId("9124ea4043247e6fd27712d92685cdad6ea29f654ae383424ca3af14efe50b21")
 	assert.NoError(t, err, "failed to get txn by id")
+	assert.NotNil(t, tx, "failed to get txn")
+	if tx == nil {
+		assert.FailNow(t, "Failed to get txn from dataprovider")
+	}
 
 	extractedCount := solveBucket.Add(tx)
 	assert.Equal(t, 3, extractedCount, "wrong number of SHPair extractions")
@@ -123,10 +126,15 @@ func TestNotBreakable(t *testing.T) {
 
 func TestDataProviders(t *testing.T) {
 	is := provider.NewInsightProvider()
-	bs := provider.NewBtcdProvider("localhost:8332", "admin", "admin", true, true)
+	bs := provider.NewLocalBitcoindRpcProvider()
 
 	hsh, _ := chainhash.NewHashFromStr("9ec4bc49e828d924af1d1029cacf709431abbde46d59554b62bc270e3b29c4b1")
 	bst := bs.GetTransaction(hsh)
 	ist := is.GetTransaction(hsh)
+	assert.NotNil(t, bst, "btcd returned nil")
+	assert.NotNil(t, ist, "insight returned nil")
+	if bst == nil || ist == nil {
+		assert.FailNow(t, "Failed to get txn from dataprovider")
+	}
 	assert.Equal(t, bst, ist, "insight and btcd in disagrement")
 }
