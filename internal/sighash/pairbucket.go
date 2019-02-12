@@ -7,7 +7,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/piotrnar/gocoin/lib/btc"
-	"log"
+	log "github.com/sirupsen/logrus"
 )
 
 type SHPairBucket struct {
@@ -35,6 +35,10 @@ func (bucket *SHPairBucket) Add(rawTxn []byte) int {
 
 	msgTx := btx.MsgTx()
 	for i, input := range gtx.TxIn {
+		if len(input.ScriptSig) == 0 {
+			log.Printf("Skipping empty scriptSig (tx=%s, input=%d)\n", btx.Hash().String(), i)
+			continue
+		}
 		sig, key, err := input.GetKeyAndSig()
 		if err != nil {
 			log.Printf("Error in DeriveEcdsaInfo in (tx=%s, input=%d)\n", btx.Hash().String(), i)

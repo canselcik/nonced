@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/canselcik/nonced/internal/sighash"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os"
 
 	"github.com/urfave/cli"
@@ -17,15 +19,14 @@ func QueryLocalHeight(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-
-	log.Println("Height:", height)
+	log.WithField("height", height).Info("Query successful")
 	return nil
 }
 
 func NonceReuseFromTx(c *cli.Context) error {
 	txid := c.String("id")
 	if len(txid) == 0 {
-		return fmt.Errorf("--id parameter is required")
+		return errors.New("--id parameter is required")
 	}
 
 	ds := provider.NewLocalBitcoindRpcProvider()
@@ -44,10 +45,54 @@ func NonceReuseFromTx(c *cli.Context) error {
 	}
 
 	solutions := solveBucket.Solve()
-	fmt.Println("Extracted", len(solutions), "private key(s)")
+	fmt.Println("\nExtracted", len(solutions), "private key(s)")
+	for _, priv := range solutions {
+		serialized := priv.Serialize()
+		log.WithField("hexEncoded", hex.EncodeToString(serialized)).
+			Info("Found private key")
+	}
+	return nil
+}
+
+func NonceReuseFromBlockTxs(c *cli.Context) error {
+	blockId := c.String("id")
+	if len(blockId) == 0 {
+		return errors.New("--id parameter is required")
+	}
+
+	id, err := chainhash.NewHashFromStr(blockId)
+	if err != nil {
+		return fmt.Errorf("failed to parse block hash: %s", err.Error())
+	}
+
+	ds, _ := provider.NewLocalBitcoindRpcProvider().(*provider.BtcdProvider)
+	block, err := ds.GetBlock(id)
+	if block == nil {
+		return fmt.Errorf("unable to find the block with id %s due to error: %s", blockId, err.Error())
+	}
+
+	solveBucket := sighash.NewSHPairBucket(ds)
+	for i, tx := range block.Transactions {
+		log.WithFields(log.Fields{
+			"idx":  i,
+			"txid": tx.TxHash(),
+		}).Info("Processing transaction")
+
+		raw, err := provider.SerializeBitcoinMsgTx(tx)
+		if err != nil {
+			log.WithError(err).Error("Failed to serialize")
+			continue
+		}
+		extracted := solveBucket.Add(raw)
+		log.Infof("Extracted %d SHPair(s) from transaction\n", extracted)
+	}
+	log.Infof("Total signature set: %d\n", len(solveBucket.Pairs))
+
+	solutions := solveBucket.Solve()
+	log.Infoln("Extracted", len(solutions), "private key(s)")
 	for i, priv := range solutions {
 		serialized := priv.Serialize()
-		fmt.Printf("Hex Encoded Private Key %d: %s\n", i, hex.EncodeToString(serialized))
+		log.Infof("\tHex Encoded Private Key %d: %s\n", i, hex.EncodeToString(serialized))
 	}
 	return nil
 }
@@ -86,6 +131,17 @@ func main() {
 						},
 					},
 					Action: NonceReuseFromTx,
+				},
+				{
+					Name:  "block",
+					Usage: "extracts from transactions in the block and their prevOuts",
+					Flags: []cli.Flag{
+						cli.StringFlag{
+							Name:  "id",
+							Usage: "hex-encoded block hash",
+						},
+					},
+					Action: NonceReuseFromBlockTxs,
 				},
 			},
 		},

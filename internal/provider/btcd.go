@@ -9,7 +9,7 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"log"
+	log "github.com/sirupsen/logrus"
 )
 
 type BtcdProvider struct {
@@ -60,16 +60,25 @@ func (p *BtcdProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, error)
 		return nil, errors.New("GetTransaction returned nil")
 	}
 
+	return SerializeBitcoinMsgTx(tx.MsgTx())
+}
+
+func SerializeBitcoinMsgTx(msgTx *wire.MsgTx) ([]byte, error) {
+	if msgTx == nil {
+		return nil, errors.New("SerializeBitcoinMsgTx passed in nil")
+	}
+
 	var b bytes.Buffer
 	wr := bufio.NewWriter(&b)
-	err = tx.MsgTx().BtcEncode(wr, 0, wire.WitnessEncoding)
+	err := msgTx.BtcEncode(wr, 0, wire.WitnessEncoding)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode the transaction: %s", err.Error())
+		return nil, fmt.Errorf("failed to serialize the txn: %s", err.Error())
 	}
+
 	err = wr.Flush()
 	if err != nil {
 		return nil, fmt.Errorf(
-			"failed to flush the buffer while encoding the transaction: %s", err.Error())
+			"failed to flush the buffer while serializing the txn: %s", err.Error())
 	}
 	return b.Bytes(), nil
 }

@@ -1,20 +1,18 @@
 package provider
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcutil"
+	log "github.com/sirupsen/logrus"
 )
 
 type InsightProvider struct {
@@ -98,16 +96,5 @@ func (p *InsightProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, err
 		return nil, errors.New("GetTransaction returned nil")
 	}
 
-	var b bytes.Buffer
-	wr := bufio.NewWriter(&b)
-	err = tx.MsgTx().BtcEncode(wr, 0, wire.WitnessEncoding)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode the transaction: %s", err.Error())
-	}
-	err = wr.Flush()
-	if err != nil {
-		return nil, fmt.Errorf(
-			"failed to flush the buffer while encoding the transaction: %s", err.Error())
-	}
-	return b.Bytes(), nil
+	return SerializeBitcoinMsgTx(tx.MsgTx())
 }
