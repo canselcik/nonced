@@ -69,7 +69,7 @@ func TestNewAPI(t *testing.T) {
 	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9)
 
 	solveBucket := sighash.NewSHPairBucket(ds)
-	extractedCount := solveBucket.Add(tx9ec4b)
+	extractedCount, _ := solveBucket.AddRawTx(tx9ec4b)
 	assert.Equal(t, 2, extractedCount, "wrong number of SHPair extractions")
 
 	r := "d47ce4c025c35ec440bc81d99834a624875161a26bf56ef7fdc0f5d52f843ad1"
@@ -116,12 +116,29 @@ func TestNotBreakable(t *testing.T) {
 		assert.FailNow(t, "Failed to get txn from dataprovider")
 	}
 
-	extractedCount := solveBucket.Add(tx)
+	extractedCount, _ := solveBucket.AddRawTx(tx)
 	assert.Equal(t, 3, extractedCount, "wrong number of SHPair extractions")
 
 	solutions := solveBucket.Solve()
 	assert.Equal(t, 0, len(solutions), "wrong number of SHPair solutions")
+}
 
+func TestIssueTxn1(t *testing.T) {
+	ds := provider.NewLocalBitcoindRpcProvider()
+	solveBucket := sighash.NewSHPairBucket(ds)
+
+	tx, err := ds.GetRawTransactionFromTxId("b976d144a9eba34e678f5a07dd226be95004bbe21358153690ccecb837f0d331")
+	assert.NoError(t, err, "failed to get txn by id")
+	assert.NotNil(t, tx, "failed to get txn")
+	if tx == nil {
+		assert.FailNow(t, "Failed to get txn from the dataprovider")
+	}
+
+	extractedCount, _ := solveBucket.AddRawTx(tx)
+	assert.Equal(t, 0, extractedCount, "wrong number of SHPair extractions")
+
+	solutions := solveBucket.Solve()
+	assert.Equal(t, 0, len(solutions), "wrong number of SHPair solutions")
 }
 
 func TestDataProviders(t *testing.T) {

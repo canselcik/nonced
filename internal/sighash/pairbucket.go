@@ -2,11 +2,12 @@ package sighash
 
 import (
 	"bytes"
+	"errors"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/provider"
-	"github.com/piotrnar/gocoin/lib/btc"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -22,31 +23,88 @@ func NewSHPairBucket(infoProvider provider.DataProvider) *SHPairBucket {
 	}
 }
 
-func (bucket *SHPairBucket) Add(rawTxn []byte) int {
-	gtx, _ := btc.NewTx(rawTxn)
-	gtx.SetHash(rawTxn)
+var (
+	ErrTxnDecode          = errors.New("failed to decode transaction")
+	WarnEmptySigSkip      = errors.New("skipping due to empty sig")
+	WarnWitnessSkip       = errors.New("skipping due to txWitness")
+	WarnSigOffsetSkip     = errors.New("skipping due to sig offset being out of bounds")
+	WarnSigParseSkip      = errors.New("skipping due to failure to parse signature")
+	WarnKeyLenOffsetSkip  = errors.New("skipping due to key len index being out of bounds")
+	WarnKeyOffsetSkip     = errors.New("skipping due to key end being out of bounds")
+	WarnKeyParseSkip      = errors.New("skipping due to failure to parse key")
+	WarnCantFindPrevOut   = errors.New("skipping due to failure to get prevOut for input")
+	WarnFailedZValExtract = errors.New("skipping due to failure extract Z value for prevOut")
+	WarnMofNSkip          = errors.New("skipping due to m-of-n")
+)
 
-	extracted := 0
+func (bucket *SHPairBucket) AddRawTx(rawTxn []byte) (int, map[int]error) {
 	btx, err := btcutil.NewTxFromReader(bytes.NewReader(rawTxn))
 	if err != nil {
-		log.Println("error in DecodeTransaction:", err.Error())
-		return extracted
+		return 0, map[int]error{
+			-1: ErrTxnDecode,
+		}
 	}
+	return bucket.AddTx(btx.MsgTx())
+}
 
-	msgTx := btx.MsgTx()
-	for i, input := range gtx.TxIn {
-		if len(input.ScriptSig) == 0 {
-			log.Printf("Skipping empty scriptSig (tx=%s, input=%d)\n", btx.Hash().String(), i)
+func (bucket *SHPairBucket) AddTx(msgTx *wire.MsgTx) (int, map[int]error) {
+	extracted := 0
+	errMap := make(map[int]error, 0)
+
+	for i, input := range msgTx.TxIn {
+		ss := input.SignatureScript
+		if len(ss) == 0 {
+			errMap[i] = WarnEmptySigSkip
 			continue
 		}
-		sig, key, err := input.GetKeyAndSig()
+
+		if msgTx.HasWitness() {
+			errMap[i] = WarnWitnessSkip
+			continue
+		}
+
+		if ss[0] == txscript.OP_0 {
+			errMap[i] = WarnMofNSkip
+			continue
+		}
+
+		sigBegin := 1
+		sigLen := int(ss[0])
+		sigEnd := sigBegin + sigLen
+		if len(ss) < sigEnd {
+			errMap[i] = WarnSigOffsetSkip
+			continue
+		}
+
+		sigslice := ss[sigBegin:sigEnd]
+		sig, err := btcec.ParseSignature(sigslice, btcec.S256())
 		if err != nil {
-			log.Printf("Error in DeriveEcdsaInfo in (tx=%s, input=%d)\n", btx.Hash().String(), i)
+			errMap[i] = WarnSigParseSkip
+			continue
+		}
+
+		offs := sigBegin + sigLen
+		if len(ss) <= offs {
+			errMap[i] = WarnKeyLenOffsetSkip
+			continue
+		}
+		keyLen := int(ss[offs])
+		keyBegin := offs + 1
+		keyEnd := keyBegin + keyLen
+		if len(ss) < keyEnd {
+			errMap[i] = WarnKeyOffsetSkip
+			continue
+		}
+
+		keyslice := ss[keyBegin:keyEnd]
+		key, err := btcec.ParsePubKey(keyslice, btcec.S256())
+		if err != nil {
+			errMap[i] = WarnKeyParseSkip
 			continue
 		}
 
 		res := SHPair{
-			PublicKey: key.Bytes(false),
+			PublicKey: key.SerializeUncompressed(),
 			R:         sig.R,
 			S:         sig.S,
 		}
@@ -54,8 +112,7 @@ func (bucket *SHPairBucket) Add(rawTxn []byte) int {
 		prevOutpoint := msgTx.TxIn[i].PreviousOutPoint
 		prevTx := bucket.infoProvider.GetTransaction(&prevOutpoint.Hash)
 		if prevTx == nil {
-			log.Printf("Error in DeriveEcdsaInfo due to prevtx not found (tx=%s, input=%d)\n",
-				btx.Hash().String(), i)
+			errMap[i] = WarnCantFindPrevOut
 			continue
 		}
 
@@ -67,16 +124,14 @@ func (bucket *SHPairBucket) Add(rawTxn []byte) int {
 			i,
 		)
 		if err != nil {
-			log.Printf(
-				"Error in DeriveEcdsaInfo while computing z value from prevOutpoint (tx=%s, outidx=%d)\n",
-				prevOutpoint.Hash.String(), prevOutpoint.Index)
+			errMap[i] = WarnFailedZValExtract
 			continue
 		}
 		res.Z = z
 		bucket.Pairs = append(bucket.Pairs, &res)
 		extracted++
 	}
-	return extracted
+	return extracted, errMap
 }
 
 func (bucket *SHPairBucket) Solve() []*btcec.PrivateKey {

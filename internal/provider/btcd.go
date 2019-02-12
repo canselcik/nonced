@@ -49,6 +49,20 @@ func (p *BtcdProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 	return bc
 }
 
+func (p *BtcdProvider) GetTransactionFromTxId(txidStr string) (*btcutil.Tx, error) {
+	txid, err := chainhash.NewHashFromStr(txidStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse txidStr: %s", err.Error())
+	}
+
+	tx := p.GetTransaction(txid)
+	if tx == nil {
+		return nil, errors.New("GetTransaction returned nil")
+	}
+
+	return tx, nil
+}
+
 func (p *BtcdProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, error) {
 	txid, err := chainhash.NewHashFromStr(txidStr)
 	if err != nil {

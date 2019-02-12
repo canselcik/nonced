@@ -13,6 +13,23 @@ import (
 	"github.com/urfave/cli"
 )
 
+func ProcessErrMap(txid string, errMap map[int]error) (warnCount, errCount int) {
+	for inputIdx, err := range errMap {
+		switch err {
+		case sighash.WarnWitnessSkip:
+			warnCount++
+		default:
+			errCount++
+			log.WithFields(log.Fields{
+				"err":      err,
+				"inputIdx": inputIdx,
+				"tx":       txid,
+			}).Warnln("Skipped input due to critical error")
+		}
+	}
+	return
+}
+
 func QueryLocalHeight(c *cli.Context) error {
 	ds, _ := provider.NewLocalBitcoindRpcProvider().(*provider.BtcdProvider)
 	height, err := ds.GetBlockCount()
@@ -29,10 +46,10 @@ func NonceReuseFromTx(c *cli.Context) error {
 		return errors.New("--id parameter is required")
 	}
 
-	ds := provider.NewLocalBitcoindRpcProvider()
+	ds, _ := provider.NewLocalBitcoindRpcProvider().(*provider.BtcdProvider)
 	solveBucket := sighash.NewSHPairBucket(ds)
 
-	tx, err := ds.GetRawTransactionFromTxId(txid)
+	tx, err := ds.GetTransactionFromTxId(txid)
 	if err != nil {
 		return err
 	}
@@ -40,12 +57,14 @@ func NonceReuseFromTx(c *cli.Context) error {
 		return fmt.Errorf("unable to find the transaction with id: %s", txid)
 	}
 
-	if solveBucket.Add(tx) < 2 {
+	sigCount, errMap := solveBucket.AddTx(tx.MsgTx())
+	_, _ = ProcessErrMap(txid, errMap)
+	if sigCount < 2 {
 		return fmt.Errorf("given transaction yielded fewer than 2 signatures")
 	}
 
 	solutions := solveBucket.Solve()
-	fmt.Println("\nExtracted", len(solutions), "private key(s)")
+	log.Println("Extracted", len(solutions), "private key(s)")
 	for _, priv := range solutions {
 		serialized := priv.Serialize()
 		log.WithField("hexEncoded", hex.EncodeToString(serialized)).
@@ -71,25 +90,42 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 		return fmt.Errorf("unable to find the block with id %s due to error: %s", blockId, err.Error())
 	}
 
+	skipped, ok, parseErr := 0, 0, 0
 	solveBucket := sighash.NewSHPairBucket(ds)
 	for i, tx := range block.Transactions {
-		log.WithFields(log.Fields{
-			"idx":  i,
-			"txid": tx.TxHash(),
-		}).Info("Processing transaction")
-
-		raw, err := provider.SerializeBitcoinMsgTx(tx)
 		if err != nil {
-			log.WithError(err).Error("Failed to serialize")
+			log.WithFields(log.Fields{
+				"txidx":     i,
+				"blockhash": tx.TxHash(),
+				"err":       err,
+			}).Warn("Failed to serialize transaction")
+			parseErr++
 			continue
 		}
-		extracted := solveBucket.Add(raw)
-		log.Infof("Extracted %d SHPair(s) from transaction\n", extracted)
+
+		extracted, errMap := solveBucket.AddTx(tx)
+		warnCount, errCount := ProcessErrMap(tx.TxHash().String(), errMap)
+		if warnCount+errCount == 0 {
+			ok++
+		}
+		skipped += warnCount
+		log.WithFields(log.Fields{
+			"txid":           tx.TxHash(),
+			"yieldedSHPairs": extracted,
+		}).Debugln("Done processing transaction")
 	}
-	log.Infof("Total signature set: %d\n", len(solveBucket.Pairs))
+
+	log.WithFields(log.Fields{
+		"hash":               blockId,
+		"parseErrTxns":       parseErr,
+		"skippedWitnessTxns": skipped,
+		"okTxns":             ok,
+		"txnCount":           len(block.Transactions),
+		"yieldedSHPairs":     len(solveBucket.Pairs),
+	}).Infoln("Done processing block")
 
 	solutions := solveBucket.Solve()
-	log.Infoln("Extracted", len(solutions), "private key(s)")
+	log.WithField("solutionCount", len(solutions)).Infoln("Done processing SHPairs")
 	for i, priv := range solutions {
 		serialized := priv.Serialize()
 		log.Infof("\tHex Encoded Private Key %d: %s\n", i, hex.EncodeToString(serialized))
