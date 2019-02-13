@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/btcsuite/btcd/wire"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcutil"
-	log "github.com/sirupsen/logrus"
 )
 
 type InsightProvider struct {
@@ -30,16 +30,53 @@ func NewInsightProvider() DataProvider {
 	return NewCustomInsightProvider("https://insight.bitpay.com")
 }
 
-func (p *InsightProvider) GetBlockCount() *int64 {
-	bc, err := p.Client.GetBlockCount()
-	if err != nil {
-		log.Println("Failed to GetBlockCount in BtcdProvider:", err.Error())
-		return nil
+func (p *InsightProvider) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
+	client := http.Client{
+		Timeout: time.Duration(5 * time.Second),
 	}
-	return &bc
+
+	url := fmt.Sprintf("%s/api/rawblock/%s", p.address, hash.String())
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to GetRawBlock in InsightProvider: %s", err.Error())
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf(
+			"got %d from InsightProvider for block %s", resp.StatusCode, hash.String())
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to read response of GetRawBlock in InsightProvider: %s", err.Error())
+	}
+
+	var raw struct {
+		RawBlock string `json:"rawblock"`
+	}
+	err = json.Unmarshal(body, &raw)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to parse response of GetRawBlock in InsightProvider: %s", err.Error())
+	}
+
+	decoded, err := hex.DecodeString(raw.RawBlock)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to decode response of GetRawBlock in InsightProvider: %s", err.Error())
+	}
+
+	block, err := btcutil.NewBlockFromBytes(decoded)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to derive block from response of GetRawBlock in InsightProvider: %s", err.Error())
+	}
+	return block.MsgBlock(), nil
 }
 
-func (p *InsightProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
+func (p *InsightProvider) GetTransaction(txid *chainhash.Hash) (*btcutil.Tx, error) {
 	client := http.Client{
 		Timeout: time.Duration(5 * time.Second),
 	}
@@ -47,19 +84,18 @@ func (p *InsightProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 	url := fmt.Sprintf("%s/api/rawtx/%s", p.address, txid.String())
 	resp, err := client.Get(url)
 	if err != nil {
-		log.Println("Failed to GetTransaction in InsightProvider:", err.Error())
-		return nil
+		return nil, fmt.Errorf("failed to GetTransaction in InsightProvider: %s", err.Error())
 	}
 
 	if resp.StatusCode != 200 {
-		log.Println("Got", resp.StatusCode, "from InsightProvider for txn", txid.String())
-		return nil
+		return nil, fmt.Errorf(
+			"got resp code %d from InsightProvider for txn %s", resp.StatusCode, txid.String())
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Println("Failed to read response of GetTransaction in InsightProvider:", err.Error())
-		return nil
+		return nil, fmt.Errorf(
+			"failed to read response of GetTransaction in InsightProvider: %s", err.Error())
 	}
 
 	var raw struct {
@@ -67,22 +103,22 @@ func (p *InsightProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
 	}
 	err = json.Unmarshal(body, &raw)
 	if err != nil {
-		log.Println("Failed to parse response of GetTransaction in InsightProvider:", err.Error())
-		return nil
+		return nil, fmt.Errorf(
+			"failed to parse response of GetTransaction in InsightProvider: %s", err.Error())
 	}
 
 	decoded, err := hex.DecodeString(raw.RawTx)
 	if err != nil {
-		log.Println("Failed to decode response of GetTransaction in InsightProvider:", err.Error())
-		return nil
+		return nil, fmt.Errorf(
+			"failed to decode response of GetTransaction in InsightProvider: %s", err.Error())
 	}
 
 	tx, err := btcutil.NewTxFromBytes(decoded)
 	if err != nil {
-		log.Println("Failed to derive txn from response of GetTransaction in InsightProvider:", err.Error())
-		return nil
+		return nil, fmt.Errorf(
+			"failed to derive txn from response of GetTransaction in InsightProvider: %s", err.Error())
 	}
-	return tx
+	return tx, nil
 }
 
 func (p *InsightProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, error) {
@@ -91,7 +127,10 @@ func (p *InsightProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, err
 		return nil, fmt.Errorf("failed to parse txidStr: %s", err.Error())
 	}
 
-	tx := p.GetTransaction(txid)
+	tx, err := p.GetTransaction(txid)
+	if err != nil {
+		return nil, err
+	}
 	if tx == nil {
 		return nil, errors.New("GetTransaction returned nil")
 	}

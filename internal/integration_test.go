@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/hex"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/canselcik/nonced/internal/sighash"
@@ -16,16 +17,27 @@ type MockedDataSource struct {
 	mock.Mock
 }
 
-func (m *MockedDataSource) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
+func (m *MockedDataSource) GetTransaction(txid *chainhash.Hash) (*btcutil.Tx, error) {
 	retArgs := m.Called(txid)
 	cast, _ := retArgs.Get(0).(*btcutil.Tx)
-	return cast
+	return cast, retArgs.Error(1)
 }
 
 func (m *MockedDataSource) GetRawTransactionFromTxId(txidStr string) ([]byte, error) {
 	retArgs := m.Called(txidStr)
 	cast, _ := retArgs.Get(0).([]byte)
 	return cast, retArgs.Error(1)
+}
+
+func (m *MockedDataSource) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
+	retArgs := m.Called(hash)
+	cast, _ := retArgs.Get(0).(*wire.MsgBlock)
+	return cast, retArgs.Error(1)
+}
+
+func (m *MockedDataSource) GetBlockCount() (int64, error) {
+	retArgs := m.Called()
+	return int64(retArgs.Int(0)), retArgs.Error(1)
 }
 
 var tx9ec4b, _ = hex.DecodeString("0100000002f64c603e2f9f4daf70c2f4252b2dcdb07" +
@@ -65,8 +77,8 @@ func TestNewAPI(t *testing.T) {
 	parsed01f7ba, _ := btcutil.NewTxFromBytes(tx01f7ba)
 	parsed4a85d9, _ := btcutil.NewTxFromBytes(tx4a85d9)
 
-	ds.On("GetTransaction", id01f7ba).Return(parsed01f7ba)
-	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9)
+	ds.On("GetTransaction", id01f7ba).Return(parsed01f7ba, nil)
+	ds.On("GetTransaction", id4a85d9).Return(parsed4a85d9, nil)
 
 	solveBucket := sighash.NewSHPairBucket(ds)
 	extractedCount, _ := solveBucket.AddRawTx(tx9ec4b)
@@ -146,8 +158,8 @@ func TestDataProviders(t *testing.T) {
 	bs := provider.NewLocalBitcoindRpcProvider()
 
 	hsh, _ := chainhash.NewHashFromStr("9ec4bc49e828d924af1d1029cacf709431abbde46d59554b62bc270e3b29c4b1")
-	bst := bs.GetTransaction(hsh)
-	ist := is.GetTransaction(hsh)
+	bst, _ := bs.GetTransaction(hsh)
+	ist, _ := is.GetTransaction(hsh)
 	assert.NotNil(t, bst, "btcd returned nil")
 	assert.NotNil(t, ist, "insight returned nil")
 	if bst == nil || ist == nil {

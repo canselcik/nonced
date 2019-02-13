@@ -40,13 +40,12 @@ func (p *BtcdProvider) Close() {
 	p.Shutdown()
 }
 
-func (p *BtcdProvider) GetTransaction(txid *chainhash.Hash) *btcutil.Tx {
+func (p *BtcdProvider) GetTransaction(txid *chainhash.Hash) (*btcutil.Tx, error) {
 	bc, err := p.Client.GetRawTransaction(txid)
 	if err != nil {
-		log.Println("Failed to GetBlockCount in BtcdProvider:", err.Error())
-		return nil
+		return nil, fmt.Errorf("failed to GetBlockCount in BtcdProvider: %s", err.Error())
 	}
-	return bc
+	return bc, nil
 }
 
 func (p *BtcdProvider) GetTransactionFromTxId(txidStr string) (*btcutil.Tx, error) {
@@ -55,7 +54,10 @@ func (p *BtcdProvider) GetTransactionFromTxId(txidStr string) (*btcutil.Tx, erro
 		return nil, fmt.Errorf("failed to parse txidStr: %s", err.Error())
 	}
 
-	tx := p.GetTransaction(txid)
+	tx, err := p.GetTransaction(txid)
+	if err != nil {
+		return nil, err
+	}
 	if tx == nil {
 		return nil, errors.New("GetTransaction returned nil")
 	}
@@ -69,7 +71,10 @@ func (p *BtcdProvider) GetRawTransactionFromTxId(txidStr string) ([]byte, error)
 		return nil, fmt.Errorf("failed to parse txidStr: %s", err.Error())
 	}
 
-	tx := p.GetTransaction(txid)
+	tx, err := p.GetTransaction(txid)
+	if err != nil {
+		return nil, err
+	}
 	if tx == nil {
 		return nil, errors.New("GetTransaction returned nil")
 	}

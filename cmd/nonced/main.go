@@ -31,7 +31,14 @@ func ProcessErrMap(txid string, errMap map[int]error) (warnCount, errCount int) 
 }
 
 func QueryLocalHeight(c *cli.Context) error {
-	ds, _ := provider.NewLocalBitcoindRpcProvider().(*provider.BtcdProvider)
+	var ds provider.DataProvider
+	if c.GlobalBool("insight") {
+		ds = provider.NewInsightProvider()
+		log.Info("Using Insight as DataProvider")
+	} else {
+		ds = provider.NewLocalBitcoindRpcProvider()
+	}
+
 	height, err := ds.GetBlockCount()
 	if err != nil {
 		return err
@@ -46,10 +53,22 @@ func NonceReuseFromTx(c *cli.Context) error {
 		return errors.New("--id parameter is required")
 	}
 
-	ds, _ := provider.NewLocalBitcoindRpcProvider().(*provider.BtcdProvider)
+	var ds provider.DataProvider
+	if c.GlobalBool("insight") {
+		ds = provider.NewInsightProvider()
+		log.Info("Using Insight as DataProvider")
+
+	} else {
+		ds = provider.NewLocalBitcoindRpcProvider()
+	}
+
 	solveBucket := sighash.NewSHPairBucket(ds)
 
-	tx, err := ds.GetTransactionFromTxId(txid)
+	hash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		return err
+	}
+	tx, err := ds.GetTransaction(hash)
 	if err != nil {
 		return err
 	}
@@ -84,7 +103,14 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 		return fmt.Errorf("failed to parse block hash: %s", err.Error())
 	}
 
-	ds, _ := provider.NewLocalBitcoindRpcProvider().(*provider.BtcdProvider)
+	var ds provider.DataProvider
+	if c.GlobalBool("insight") {
+		ds = provider.NewInsightProvider()
+		log.Info("Using Insight as DataProvider")
+	} else {
+		ds = provider.NewLocalBitcoindRpcProvider()
+	}
+
 	block, err := ds.GetBlock(id)
 	if block == nil {
 		return fmt.Errorf("unable to find the block with id %s due to error: %s", blockId, err.Error())
@@ -135,16 +161,16 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 
 func main() {
 	app := cli.NewApp()
+	app.Flags = []cli.Flag{
+		cli.BoolFlag{
+			Name:  "insight",
+			Usage: "specify to use insight to fetch transactions and blocks",
+		},
+	}
 	app.Commands = []cli.Command{
 		{
 			Name:  "query",
 			Usage: "custom queries for diagnostic usage",
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "source",
-					Usage: "src string",
-				},
-			},
 			Subcommands: []cli.Command{
 				{
 					Name:   "lheight",

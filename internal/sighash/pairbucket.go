@@ -110,7 +110,11 @@ func (bucket *SHPairBucket) AddTx(msgTx *wire.MsgTx) (int, map[int]error) {
 		}
 
 		prevOutpoint := msgTx.TxIn[i].PreviousOutPoint
-		prevTx := bucket.infoProvider.GetTransaction(&prevOutpoint.Hash)
+		prevTx, err := bucket.infoProvider.GetTransaction(&prevOutpoint.Hash)
+		if err != nil {
+			errMap[i] = err
+			continue
+		}
 		if prevTx == nil {
 			errMap[i] = WarnCantFindPrevOut
 			continue
