@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/canselcik/nonced/internal/sighash"
 	log "github.com/sirupsen/logrus"
-	"os"
-
 	"github.com/urfave/cli"
+	"os"
 )
 
 func ProcessErrMap(txid string, errMap map[int]error) (warnCount, errCount int) {
@@ -159,6 +159,90 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 	return nil
 }
 
+func NonceReuseRealtime(c *cli.Context) error {
+	var ds provider.DataProvider
+
+	if c.GlobalBool("insight") {
+		ds = provider.NewInsightProvider()
+		log.Info("Using Insight as DataProvider")
+	} else {
+		ds = provider.NewLocalBitcoindRpcProvider()
+	}
+
+	addr := c.String("connstring")
+	if len(addr) == 0 {
+		addr = "tcp://127.0.0.1:28332"
+	}
+
+	streamer, err := provider.NewBtcdZmqStreamer(addr, []string{"rawtx", "rawblock"})
+	if err != nil {
+		return err
+	}
+
+	defer streamer.Close()
+	log.Infof("Connected to %s", addr)
+
+	err = streamer.Stream(func(msgType string, msgBody []byte) {
+		switch msgType {
+		case "rawtx":
+			tx, err := btcutil.NewTxFromBytes(msgBody)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"err": err,
+					"tx":  msgBody,
+				}).Errorln("Failed to parse txn")
+				return
+			}
+
+			txid := tx.Hash().String()
+			solveBucket := sighash.NewSHPairBucket(ds)
+			sigCount, errMap := solveBucket.AddTx(tx.MsgTx())
+			for inputIdx, err := range errMap {
+				switch err {
+				case sighash.WarnWitnessSkip:
+					log.WithFields(log.Fields{
+						"err":      err,
+						"inputIdx": inputIdx,
+						"tx":       txid,
+					}).Warnln("Skipped input due to txwitness")
+				default:
+					log.WithFields(log.Fields{
+						"err":      err,
+						"inputIdx": inputIdx,
+						"tx":       txid,
+					}).Warnln("Skipped input due to critical error")
+				}
+			}
+			if sigCount >= 2 {
+				solutions := solveBucket.Solve()
+				log.Println("Extracted", len(solutions), "private key(s)")
+				for _, priv := range solutions {
+					serialized := priv.Serialize()
+					log.WithField("hexEncoded", hex.EncodeToString(serialized)).
+						Info("Found private key")
+				}
+			}
+
+		case "rawblock":
+			block, err := btcutil.NewBlockFromBytes(msgBody)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"err":   err,
+					"block": msgBody,
+				}).Errorln("Failed to parse block")
+				return
+			}
+			log.WithFields(log.Fields{
+				"blockHash": block.Hash().String(),
+			}).Infoln("New block")
+		default:
+			log.Fatalf("Receive message with unknown type from ZMQ: %s", msgType)
+		}
+	})
+
+	return err
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -183,6 +267,17 @@ func main() {
 			Name:  "nonce",
 			Usage: "extract private key from nonce reuse in ECDSA signatures",
 			Subcommands: []cli.Command{
+				{
+					Name:  "stream",
+					Usage: "streams from bitcoind via ZMQ and performs realtime analysis",
+					Flags: []cli.Flag{
+						cli.StringFlag{
+							Name:  "connstring",
+							Usage: "connstring for the ZMQ publisher",
+						},
+					},
+					Action: NonceReuseRealtime,
+				},
 				{
 					Name:  "tx",
 					Usage: "extracts from a single transaction",
