@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/provider"
 	"github.com/canselcik/nonced/internal/sighash"
+	"github.com/canselcik/nonced/internal/storage"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"os"
@@ -174,6 +175,16 @@ func NonceReuseRealtime(c *cli.Context) error {
 		addr = "tcp://127.0.0.1:28332"
 	}
 
+	var db *storage.PostgresStorage
+	if c.Bool("db") {
+		st, err := storage.NewPostgresStorage("localhost", 5432, "postgres", "postgres", "postgres")
+		if err != nil {
+			return err
+		}
+		log.Infof("DB enabled!")
+		db = st
+	}
+
 	streamer, err := provider.NewBtcdZmqStreamer(addr, []string{"rawtx", "rawblock"})
 	if err != nil {
 		return err
@@ -213,6 +224,14 @@ func NonceReuseRealtime(c *cli.Context) error {
 					}).Warnln("Skipped input due to critical error")
 				}
 			}
+
+			for _, pair := range solveBucket.Pairs {
+				err := db.PutEntry(txid, pair.PublicKey, pair.Z, pair.R.Bytes(), pair.S.Bytes())
+				if err != nil {
+					log.Fatalln(err.Error())
+				}
+			}
+
 			if sigCount >= 2 {
 				solutions := solveBucket.Solve()
 				log.Println("Extracted", len(solutions), "private key(s)")
@@ -273,7 +292,11 @@ func main() {
 					Flags: []cli.Flag{
 						cli.StringFlag{
 							Name:  "connstring",
-							Usage: "connstring for the ZMQ publisher",
+							Usage: "connstring for the ZMQ publisher source",
+						},
+						cli.BoolFlag{
+							Name:  "db",
+							Usage: "use db",
 						},
 					},
 					Action: NonceReuseRealtime,
