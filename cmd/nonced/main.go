@@ -173,7 +173,7 @@ func NonceReuseRealtime(c *cli.Context) error {
 	}
 
 	// Init storage
-	var db *storage.PostgresStorage
+	var db storage.Storage
 	if c.Bool("db") {
 		st, err := storage.NewPostgresStorage("localhost", 5432,
 			"postgres", "postgres", "postgres")
@@ -182,6 +182,8 @@ func NonceReuseRealtime(c *cli.Context) error {
 		}
 		log.Infof("DB enabled!")
 		db = st
+	} else {
+		db = storage.NewNullStorage()
 	}
 
 	// Init the realtime streamer

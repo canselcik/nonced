@@ -10,7 +10,7 @@ type PostgresStorage struct {
 	*sqlx.DB
 }
 
-func NewPostgresStorage(host string, port int, user, password, dbname string) (*PostgresStorage, error) {
+func NewPostgresStorage(host string, port int, user, password, dbname string) (Storage, error) {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
