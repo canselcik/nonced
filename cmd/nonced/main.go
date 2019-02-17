@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/canselcik/nonced/internal/provider"
+	"github.com/canselcik/nonced/internal/realtime"
 	"github.com/canselcik/nonced/internal/sighash"
 	"github.com/canselcik/nonced/internal/storage"
 	log "github.com/sirupsen/logrus"
@@ -163,6 +164,7 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 func NonceReuseRealtime(c *cli.Context) error {
 	var ds provider.DataProvider
 
+	// Init the provider
 	if c.GlobalBool("insight") {
 		ds = provider.NewInsightProvider()
 		log.Info("Using Insight as DataProvider")
@@ -170,14 +172,11 @@ func NonceReuseRealtime(c *cli.Context) error {
 		ds = provider.NewLocalBitcoindRpcProvider()
 	}
 
-	addr := c.String("connstring")
-	if len(addr) == 0 {
-		addr = "tcp://127.0.0.1:28332"
-	}
-
+	// Init storage
 	var db *storage.PostgresStorage
 	if c.Bool("db") {
-		st, err := storage.NewPostgresStorage("localhost", 5432, "postgres", "postgres", "postgres")
+		st, err := storage.NewPostgresStorage("localhost", 5432,
+			"postgres", "postgres", "postgres")
 		if err != nil {
 			return err
 		}
@@ -185,15 +184,20 @@ func NonceReuseRealtime(c *cli.Context) error {
 		db = st
 	}
 
-	streamer, err := provider.NewBtcdZmqStreamer(addr, []string{"rawtx", "rawblock"})
+	// Init the realtime streamer
+	addr := c.String("connstring")
+	if len(addr) == 0 {
+		addr = "tcp://127.0.0.1:28333"
+	}
+	streamer, err := realtime.NewBtcdZmqStreamer(addr, []string{"rawtx"})
 	if err != nil {
 		return err
 	}
-
 	defer streamer.Close()
-	log.Infof("Connected to %s", addr)
+	log.Infof("Connected to ZMQ at %s, subscribed to 'rawtx'", addr)
 
-	err = streamer.Stream(func(msgType string, msgBody []byte) {
+	// Stream
+	return streamer.Stream(func(msgType string, msgBody []byte) {
 		switch msgType {
 		case "rawtx":
 			tx, err := btcutil.NewTxFromBytes(msgBody)
@@ -243,6 +247,8 @@ func NonceReuseRealtime(c *cli.Context) error {
 			}
 
 		case "rawblock":
+			// Just display the block -- we don't subscribe
+			// to this topic anymore anyway.
 			block, err := btcutil.NewBlockFromBytes(msgBody)
 			if err != nil {
 				log.WithFields(log.Fields{
@@ -258,8 +264,6 @@ func NonceReuseRealtime(c *cli.Context) error {
 			log.Fatalf("Receive message with unknown type from ZMQ: %s", msgType)
 		}
 	})
-
-	return err
 }
 
 func main() {
@@ -268,6 +272,10 @@ func main() {
 		cli.BoolFlag{
 			Name:  "insight",
 			Usage: "specify to use insight to fetch transactions and blocks",
+		},
+		cli.StringFlag{
+			Name: "btcd",
+			Usage: "specify the bitcoind instance with which nonced will interact",
 		},
 	}
 	app.Commands = []cli.Command{
