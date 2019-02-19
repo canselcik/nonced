@@ -38,7 +38,7 @@ func QueryLocalHeight(c *cli.Context) error {
 		ds = provider.NewInsightProvider()
 		log.Info("Using Insight as DataProvider")
 	} else {
-		ds = provider.NewLocalBitcoindRpcProvider()
+		ds = GetBitcoindProviderForContext(c)
 	}
 
 	height, err := ds.GetBlockCount()
@@ -61,7 +61,7 @@ func NonceReuseFromTx(c *cli.Context) error {
 		log.Info("Using Insight as DataProvider")
 
 	} else {
-		ds = provider.NewLocalBitcoindRpcProvider()
+		ds = GetBitcoindProviderForContext(c)
 	}
 
 	solveBucket := sighash.NewSHPairBucket(ds)
@@ -110,7 +110,7 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 		ds = provider.NewInsightProvider()
 		log.Info("Using Insight as DataProvider")
 	} else {
-		ds = provider.NewLocalBitcoindRpcProvider()
+		ds = GetBitcoindProviderForContext(c)
 	}
 
 	block, err := ds.GetBlock(id)
@@ -161,6 +161,19 @@ func NonceReuseFromBlockTxs(c *cli.Context) error {
 	return nil
 }
 
+func GetBitcoindProviderForContext(c *cli.Context) provider.DataProvider {
+	btcd_addr := c.GlobalString("bitcoind-addr")
+	btcd_user := c.GlobalString("bitcoind-user")
+	btcd_pass := c.GlobalString("bitcoind-pass")
+	if len(btcd_addr) == 0 && len(btcd_user) == 0 && len(btcd_pass) == 0 {
+		return provider.NewLocalBitcoindRpcProvider()
+	}
+	if len(btcd_addr) == 0 || len(btcd_user) == 0 || len(btcd_pass) == 0 {
+		log.Fatal("If any of the bitcoind-(user|addr|pass) are specified, all need to be specified.")
+	}
+	return provider.NewBtcdProvider(btcd_addr, btcd_user, btcd_pass, true, true)
+}
+
 func NonceReuseRealtime(c *cli.Context) error {
 	var ds provider.DataProvider
 
@@ -169,7 +182,7 @@ func NonceReuseRealtime(c *cli.Context) error {
 		ds = provider.NewInsightProvider()
 		log.Info("Using Insight as DataProvider")
 	} else {
-		ds = provider.NewLocalBitcoindRpcProvider()
+		ds = GetBitcoindProviderForContext(c)
 	}
 
 	// Init storage
@@ -276,7 +289,15 @@ func main() {
 			Usage: "specify to use insight to fetch transactions and blocks",
 		},
 		cli.StringFlag{
-			Name: "btcd",
+			Name:  "bitcoind-addr",
+			Usage: "specify the bitcoind instance with which nonced will interact",
+		},
+		cli.StringFlag{
+			Name:  "bitcoind-user",
+			Usage: "specify the bitcoind instance with which nonced will interact",
+		},
+		cli.StringFlag{
+			Name:  "bitcoind-pass",
 			Usage: "specify the bitcoind instance with which nonced will interact",
 		},
 	}
