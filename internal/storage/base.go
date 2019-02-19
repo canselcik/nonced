@@ -4,7 +4,7 @@ type Storage interface {
 	PutEntry(srctxn string, pubkey, z, r, s []byte) error
 }
 
-type NullStorage struct {}
+type NullStorage struct{}
 
 func NewNullStorage() Storage {
 	return &NullStorage{}
