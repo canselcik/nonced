@@ -24,3 +24,7 @@ K = (L1 + pk * R) / s1 Mod N    and     K = (L2 + pk * R) / s2 Mod N
 pk Mod N = (s2 * L1 - s1 * L2) / R * (s1 - s2)
 pk Mod N = (s2 * L1 - s1 * L2) * (R * (s1 - s2)) ** -1
 ```
+
+Make sure zeromq is installed for realtime streaming features.
+
+This can be done on OSX with `brew install zeromq`.
